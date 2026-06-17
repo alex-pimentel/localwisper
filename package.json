@@ -2,6 +2,7 @@
   "name": "lightwisper",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,8 +11,10 @@
     "tauri:build": "tauri build"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.1",
     "@tauri-apps/cli": "^2.0.0",
     "@vitejs/plugin-react": "^4.0.0",
+    "tailwindcss": "^4.3.1",
     "vite": "^5.0.0"
   },
   "dependencies": {

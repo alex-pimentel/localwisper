@@ -18,7 +18,7 @@ impl Database {
     pub fn get_folders(&self) -> Result<Vec<Folder>> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, is_synced, cloud_id, created_at FROM folders ORDER BY name ASC"
+                "SELECT id, name, is_synced, cloud_id, created_at FROM folders ORDER BY name ASC",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok(Folder {
@@ -29,7 +29,8 @@ impl Database {
                     created_at: row.get(4)?,
                 })
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
@@ -54,7 +55,10 @@ impl Database {
 
     pub fn delete_folder(&self, id: &str) -> Result<bool> {
         self.with_conn(|conn| {
-            conn.execute("UPDATE notes SET folder_id = NULL WHERE folder_id = ?1", params![id])?;
+            conn.execute(
+                "UPDATE notes SET folder_id = NULL WHERE folder_id = ?1",
+                params![id],
+            )?;
             let affected = conn.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
             Ok(affected > 0)
         })
@@ -95,7 +99,7 @@ impl Database {
     pub fn get_pending_folders(&self) -> Result<Vec<Folder>> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, is_synced, cloud_id, created_at FROM folders WHERE is_synced = 0"
+                "SELECT id, name, is_synced, cloud_id, created_at FROM folders WHERE is_synced = 0",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok(Folder {
@@ -106,7 +110,8 @@ impl Database {
                     created_at: row.get(4)?,
                 })
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
@@ -138,12 +143,13 @@ impl Database {
     pub fn get_folder_id_map(&self) -> Result<Vec<(String, String)>> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, COALESCE(cloud_id, '') FROM folders WHERE cloud_id IS NOT NULL"
+                "SELECT id, COALESCE(cloud_id, '') FROM folders WHERE cloud_id IS NOT NULL",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
@@ -156,5 +162,64 @@ impl Database {
             let affected = conn.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
             Ok(affected > 0)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_db() -> Database {
+        let dir = std::env::temp_dir().join(format!("lightwisper_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Database::open(&dir.join("test.db")).unwrap()
+    }
+
+    #[test]
+    fn test_create_and_get_folders() {
+        let db = test_db();
+        let folder = db.create_folder("My Folder").unwrap();
+        assert_eq!(folder.name, "My Folder");
+
+        let folders = db.get_folders().unwrap();
+        assert_eq!(folders.len(), 1);
+    }
+
+    #[test]
+    fn test_rename_folder() {
+        let db = test_db();
+        let folder = db.create_folder("Old Name").unwrap();
+        db.rename_folder(&folder.id, "New Name").unwrap();
+        let folders = db.get_folders().unwrap();
+        assert_eq!(folders[0].name, "New Name");
+    }
+
+    #[test]
+    fn test_delete_folder() {
+        let db = test_db();
+        let folder = db.create_folder("Delete Me").unwrap();
+        assert!(db.delete_folder(&folder.id).unwrap());
+        assert!(db.get_folders().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_get_folder_note_counts() {
+        let db = test_db();
+        let folder = db.create_folder("With Notes").unwrap();
+        db.save_note("Note 1", "content", "text", Some(&folder.id))
+            .unwrap();
+        db.save_note("Note 2", "content", "text", Some(&folder.id))
+            .unwrap();
+        let counts = db.get_folder_note_counts().unwrap();
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0].1, 2);
+    }
+
+    #[test]
+    fn test_get_pending_folders() {
+        let db = test_db();
+        db.create_folder("Pending").unwrap();
+        let pending = db.get_pending_folders().unwrap();
+        assert_eq!(pending.len(), 1);
     }
 }

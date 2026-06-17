@@ -105,7 +105,12 @@ impl Database {
         })
     }
 
-    pub fn update_note(&self, id: &str, title: Option<&str>, content: Option<&str>) -> Result<bool> {
+    pub fn update_note(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        content: Option<&str>,
+    ) -> Result<bool> {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         self.with_conn(|conn| {
             if let Some(t) = title {
@@ -195,7 +200,11 @@ impl Database {
         Ok(None)
     }
 
-    pub fn upsert_note_from_cloud(&self, cloud_note: &Note, _local_folder_id: Option<&str>) -> Result<Note> {
+    pub fn upsert_note_from_cloud(
+        &self,
+        cloud_note: &Note,
+        _local_folder_id: Option<&str>,
+    ) -> Result<Note> {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         self.with_conn(|conn| {
             conn.execute(
@@ -261,5 +270,134 @@ impl Database {
             })?;
             rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_db() -> Database {
+        let dir = std::env::temp_dir().join(format!("lightwisper_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Database::open(&dir.join("test.db")).unwrap()
+    }
+
+    #[test]
+    fn test_save_and_get_note() {
+        let db = test_db();
+        let note = db
+            .save_note("Test Title", "Test Content", "text", None)
+            .unwrap();
+        assert_eq!(note.title, "Test Title");
+        assert_eq!(note.content, "Test Content");
+
+        let got = db.get_note(&note.id).unwrap().unwrap();
+        assert_eq!(got.title, "Test Title");
+    }
+
+    #[test]
+    fn test_get_notes_pagination() {
+        let db = test_db();
+        for i in 0..5 {
+            db.save_note(&format!("Note {}", i), "content", "text", None)
+                .unwrap();
+        }
+        let notes = db.get_notes(None, 3, None).unwrap();
+        assert_eq!(notes.len(), 3);
+    }
+
+    #[test]
+    fn test_update_note_title() {
+        let db = test_db();
+        let note = db.save_note("Original", "content", "text", None).unwrap();
+        db.update_note(&note.id, Some("Updated"), None).unwrap();
+        let updated = db.get_note(&note.id).unwrap().unwrap();
+        assert_eq!(updated.title, "Updated");
+    }
+
+    #[test]
+    fn test_update_note_content() {
+        let db = test_db();
+        let note = db.save_note("Title", "original", "text", None).unwrap();
+        db.update_note(&note.id, None, Some("new content")).unwrap();
+        let updated = db.get_note(&note.id).unwrap().unwrap();
+        assert_eq!(updated.content, "new content");
+    }
+
+    #[test]
+    fn test_delete_note() {
+        let db = test_db();
+        let note = db.save_note("Delete Me", "content", "text", None).unwrap();
+        assert!(db.delete_note(&note.id).unwrap());
+        assert!(db.get_note(&note.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_get_notes_by_type() {
+        let db = test_db();
+        db.save_note("Text Note", "content", "text", None).unwrap();
+        db.save_note("Voice Note", "content", "voice", None)
+            .unwrap();
+        let text_notes = db.get_notes(Some("text"), 10, None).unwrap();
+        assert_eq!(text_notes.len(), 1);
+    }
+
+    #[test]
+    fn test_get_notes_by_folder() {
+        let db = test_db();
+        let folder = db.create_folder("My Folder").unwrap();
+        db.save_note("Folder Note", "content", "text", Some(&folder.id))
+            .unwrap();
+        db.save_note("No Folder", "content", "text", None).unwrap();
+        let folder_notes = db.get_notes(None, 10, Some(&folder.id)).unwrap();
+        assert_eq!(folder_notes.len(), 1);
+    }
+
+    #[test]
+    fn test_search_notes_fts() {
+        let db = test_db();
+        db.save_note("Shopping List", "milk eggs bread", "text", None)
+            .unwrap();
+        db.save_note("Meeting Notes", "discussed budget", "text", None)
+            .unwrap();
+        let results = db.search_notes("shopping", 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Shopping List");
+    }
+
+    #[test]
+    fn test_get_pending_notes() {
+        let db = test_db();
+        db.save_note("Sync Me", "content", "text", None).unwrap();
+        let pending = db.get_pending_notes().unwrap();
+        assert_eq!(pending.len(), 1);
+    }
+
+    #[test]
+    fn test_hard_delete_note() {
+        let db = test_db();
+        let note = db
+            .save_note("Hard Delete", "content", "text", None)
+            .unwrap();
+        assert!(db.hard_delete_note(&note.id).unwrap());
+        assert!(db.get_note(&note.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_mark_note_synced() {
+        let db = test_db();
+        let note = db.save_note("Sync Test", "content", "text", None).unwrap();
+        db.mark_note_synced(&note.id, "cloud-123").unwrap();
+        let synced = db.get_note(&note.id).unwrap().unwrap();
+        assert_eq!(synced.title, "Sync Test");
+    }
+
+    #[test]
+    fn test_mark_note_sync_error() {
+        let db = test_db();
+        let note = db.save_note("Error Test", "content", "text", None).unwrap();
+        assert!(db.mark_note_sync_error(&note.id).unwrap());
     }
 }

@@ -29,7 +29,8 @@ impl Database {
                     created_at: row.get(4)?,
                 })
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
@@ -86,7 +87,8 @@ impl Database {
         self.with_conn(|conn| {
             let mut count = 0u64;
             for word in words {
-                let affected = conn.execute("DELETE FROM dictionary WHERE word = ?1", params![word])?;
+                let affected =
+                    conn.execute("DELETE FROM dictionary WHERE word = ?1", params![word])?;
                 count += affected as u64;
             }
             Ok(count)
@@ -119,7 +121,10 @@ impl Database {
         Ok(None)
     }
 
-    pub fn upsert_dictionary_from_cloud(&self, cloud_entry: &DictionaryEntry) -> Result<DictionaryEntry> {
+    pub fn upsert_dictionary_from_cloud(
+        &self,
+        cloud_entry: &DictionaryEntry,
+    ) -> Result<DictionaryEntry> {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         self.with_conn(|conn| {
             conn.execute(
@@ -156,5 +161,68 @@ impl Database {
             )?;
             Ok(affected > 0)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_db() -> Database {
+        let dir = std::env::temp_dir().join(format!("lightwisper_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Database::open(&dir.join("test.db")).unwrap()
+    }
+
+    #[test]
+    fn test_add_and_get_dictionary() {
+        let db = test_db();
+        db.add_dictionary_word("hello").unwrap();
+        db.add_dictionary_word("world").unwrap();
+        let entries = db.get_dictionary().unwrap();
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn test_set_dictionary_replaces_all() {
+        let db = test_db();
+        db.add_dictionary_word("old").unwrap();
+        db.set_dictionary(&["new".to_string()]).unwrap();
+        let entries = db.get_dictionary().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].word, "new");
+    }
+
+    #[test]
+    fn test_remove_dictionary_word() {
+        let db = test_db();
+        let entry = db.add_dictionary_word("removeme").unwrap();
+        assert!(db.remove_dictionary_word(&entry.id).unwrap());
+        assert!(db.get_dictionary().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_add_dictionary_word_duplicate() {
+        let db = test_db();
+        db.add_dictionary_word("unique").unwrap();
+        db.add_dictionary_word("unique").unwrap();
+        let entries = db.get_dictionary().unwrap();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn test_undo_learned_corrections() {
+        let db = test_db();
+        db.add_dictionary_word("wrong").unwrap();
+        db.undo_learned_corrections(&["wrong".to_string()]).unwrap();
+        assert!(db.get_dictionary().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_get_pending_dictionary() {
+        let db = test_db();
+        db.add_dictionary_word("syncme").unwrap();
+        let pending = db.get_pending_dictionary().unwrap();
+        assert_eq!(pending.len(), 1);
     }
 }

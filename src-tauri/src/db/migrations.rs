@@ -121,6 +121,19 @@ pub fn run(conn: &Connection) -> Result<()> {
             INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
         END;
 
+        CREATE TRIGGER IF NOT EXISTS transcriptions_ai AFTER INSERT ON transcriptions BEGIN
+            INSERT INTO transcriptions_fts(rowid, original_text, processed_text) VALUES (new.rowid, new.original_text, new.processed_text);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS transcriptions_ad AFTER DELETE ON transcriptions BEGIN
+            INSERT INTO transcriptions_fts(transcriptions_fts, rowid, original_text, processed_text) VALUES('delete', old.rowid, old.original_text, old.processed_text);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS transcriptions_au AFTER UPDATE ON transcriptions BEGIN
+            INSERT INTO transcriptions_fts(transcriptions_fts, rowid, original_text, processed_text) VALUES('delete', old.rowid, old.original_text, old.processed_text);
+            INSERT INTO transcriptions_fts(rowid, original_text, processed_text) VALUES (new.rowid, new.original_text, new.processed_text);
+        END;
+
         INSERT OR IGNORE INTO schema_version (version) VALUES (1);
         ",
     )?;

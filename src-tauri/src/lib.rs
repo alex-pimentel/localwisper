@@ -49,6 +49,13 @@ pub fn run() {
             app.manage(database);
             app.manage(dictation_state);
 
+            // Open settings window only if not already open
+            if app.get_webview_window("settings").is_none() {
+                tauri::WebviewWindowBuilder::new(app, "settings", tauri::WebviewUrl::App("index.html?panel=true".into()))
+                    .title("Lightwisper — Settings")
+                    .build()?;
+            }
+
             tracing::info!("lightwisper initialized (data dir: {:?})", data_dir);
 
             Ok(())

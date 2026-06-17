@@ -152,11 +152,17 @@ impl Database {
         })
     }
 
-    pub fn get_transcription_by_client_id(&self, _client_id: &str) -> Result<Option<Transcription>> {
+    pub fn get_transcription_by_client_id(
+        &self,
+        _client_id: &str,
+    ) -> Result<Option<Transcription>> {
         Ok(None)
     }
 
-    pub fn upsert_transcription_from_cloud(&self, cloud_t: &Transcription) -> Result<Transcription> {
+    pub fn upsert_transcription_from_cloud(
+        &self,
+        cloud_t: &Transcription,
+    ) -> Result<Transcription> {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         self.with_conn(|conn| {
             conn.execute(
@@ -212,5 +218,100 @@ impl Database {
             })?;
             Ok(rows.next().transpose()?)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_db() -> Database {
+        let dir = std::env::temp_dir().join(format!("lightwisper_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Database::open(&dir.join("test.db")).unwrap()
+    }
+
+    #[test]
+    fn test_save_and_get_transcription() {
+        let db = test_db();
+        let t = db
+            .save_transcription("hello world", "hello world", None)
+            .unwrap();
+        assert_eq!(t.original_text, "hello world");
+        assert!(!t.is_processed);
+
+        let got = db.get_transcription_by_id(&t.id).unwrap().unwrap();
+        assert_eq!(got.id, t.id);
+        assert_eq!(got.original_text, "hello world");
+    }
+
+    #[test]
+    fn test_get_transcriptions_pagination() {
+        let db = test_db();
+        for i in 0..5 {
+            db.save_transcription(&format!("text {}", i), &format!("text {}", i), None)
+                .unwrap();
+        }
+        let list = db.get_transcriptions(3).unwrap();
+        assert_eq!(list.len(), 3);
+    }
+
+    #[test]
+    fn test_delete_transcription() {
+        let db = test_db();
+        let t = db
+            .save_transcription("delete me", "delete me", None)
+            .unwrap();
+        assert!(db.delete_transcription(&t.id).unwrap());
+        assert!(db.get_transcription_by_id(&t.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_clear_transcriptions() {
+        let db = test_db();
+        db.save_transcription("a", "a", None).unwrap();
+        db.save_transcription("b", "b", None).unwrap();
+        assert_eq!(db.clear_transcriptions().unwrap(), 2);
+        assert!(db.get_transcriptions(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_search_transcriptions_fts() {
+        let db = test_db();
+        db.save_transcription("meeting notes", "meeting notes", None)
+            .unwrap();
+        db.save_transcription("grocery list", "grocery list", None)
+            .unwrap();
+        let results = db.search_transcriptions("meeting", 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].original_text, "meeting notes");
+    }
+
+    #[test]
+    fn test_update_transcription_text() {
+        let db = test_db();
+        let t = db.save_transcription("raw", "raw", None).unwrap();
+        db.update_transcription_text(&t.id, "processed", "raw")
+            .unwrap();
+        let updated = db.get_transcription_by_id(&t.id).unwrap().unwrap();
+        assert_eq!(updated.processed_text.unwrap(), "processed");
+        assert!(updated.is_processed);
+    }
+
+    #[test]
+    fn test_get_pending_transcriptions() {
+        let db = test_db();
+        db.save_transcription("sync me", "sync me", None).unwrap();
+        let pending = db.get_pending_transcriptions().unwrap();
+        assert_eq!(pending.len(), 1);
+    }
+
+    #[test]
+    fn test_hard_delete_transcription() {
+        let db = test_db();
+        let t = db.save_transcription("hard", "hard", None).unwrap();
+        assert!(db.hard_delete_transcription(&t.id).unwrap());
+        assert!(db.get_transcription_by_id(&t.id).unwrap().is_none());
     }
 }

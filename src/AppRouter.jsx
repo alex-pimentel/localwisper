@@ -1,6 +1,7 @@
-import { Suspense, lazy, useEffect } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from './stores/settingsStore'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import App from './App'
 
 const ControlPanel = lazy(() => import('./components/ControlPanel'))
@@ -20,24 +21,32 @@ function LoadingFallback() {
 }
 
 export default function AppRouter() {
+  const [label, setLabel] = useState(null)
+
   useEffect(() => {
     useSettingsStore.getState().hydrate()
+    const win = getCurrentWebviewWindow()
+    setLabel(win.label)
   }, [])
 
-  const params = new URLSearchParams(window.location.search)
+  if (label === null) return <LoadingFallback />
 
-  if (params.get('panel') === 'true' || window.location.pathname.includes('control')) {
+  if (label === 'settings') {
     return (
       <Suspense fallback={<LoadingFallback />}>
-        <ControlPanel />
+        <div className="min-h-screen bg-background text-foreground overflow-auto">
+          <ControlPanel />
+        </div>
       </Suspense>
     )
   }
 
-  if (params.get('agent') === 'true') {
+  if (label === 'agent') {
     return (
       <Suspense fallback={<LoadingFallback />}>
-        <AgentOverlay />
+        <div className="min-h-screen bg-background text-foreground overflow-auto">
+          <AgentOverlay />
+        </div>
       </Suspense>
     )
   }

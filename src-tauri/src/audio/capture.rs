@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use cpal::{
@@ -28,13 +28,14 @@ impl AudioCapture {
         }
     }
 
-    pub fn start(
-        &mut self,
-        tx: mpsc::Sender<Vec<f32>>,
-    ) -> Result<StreamConfig> {
+    pub fn start(&mut self, tx: mpsc::Sender<Vec<f32>>) -> Result<StreamConfig> {
         let host = default_host();
         let device = host
             .default_input_device()
+            .or_else(|| {
+                tracing::warn!("no default input device found, checking available devices");
+                host.input_devices().ok()?.next()
+            })
             .context("no input device available")?;
 
         let config = device
@@ -52,48 +53,42 @@ impl AudioCapture {
         running.store(true, Ordering::SeqCst);
 
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => {
-                device.build_input_stream(
-                    &stream_config,
-                    move |data: &[f32], _| {
-                        if running.load(Ordering::Relaxed) {
-                            let chunk = data.to_vec();
-                            let _ = tx.blocking_send(chunk);
-                        }
-                    },
-                    err_fn,
-                    None,
-                )?
-            }
-            cpal::SampleFormat::I16 => {
-                device.build_input_stream(
-                    &stream_config,
-                    move |data: &[i16], _| {
-                        if running.load(Ordering::Relaxed) {
-                            let chunk = data.iter().map(|s| *s as f32 / i16::MAX as f32).collect();
-                            let _ = tx.blocking_send(chunk);
-                        }
-                    },
-                    err_fn,
-                    None,
-                )?
-            }
-            cpal::SampleFormat::U16 => {
-                device.build_input_stream(
-                    &stream_config,
-                    move |data: &[u16], _| {
-                        if running.load(Ordering::Relaxed) {
-                            let chunk = data
-                                .iter()
-                                .map(|s| (*s as f32 - u16::MAX as f32 / 2.0) / u16::MAX as f32 * 2.0)
-                                .collect();
-                            let _ = tx.blocking_send(chunk);
-                        }
-                    },
-                    err_fn,
-                    None,
-                )?
-            }
+            cpal::SampleFormat::F32 => device.build_input_stream(
+                &stream_config,
+                move |data: &[f32], _| {
+                    if running.load(Ordering::Relaxed) {
+                        let chunk = data.to_vec();
+                        let _ = tx.blocking_send(chunk);
+                    }
+                },
+                err_fn,
+                None,
+            )?,
+            cpal::SampleFormat::I16 => device.build_input_stream(
+                &stream_config,
+                move |data: &[i16], _| {
+                    if running.load(Ordering::Relaxed) {
+                        let chunk = data.iter().map(|s| *s as f32 / i16::MAX as f32).collect();
+                        let _ = tx.blocking_send(chunk);
+                    }
+                },
+                err_fn,
+                None,
+            )?,
+            cpal::SampleFormat::U16 => device.build_input_stream(
+                &stream_config,
+                move |data: &[u16], _| {
+                    if running.load(Ordering::Relaxed) {
+                        let chunk = data
+                            .iter()
+                            .map(|s| (*s as f32 - u16::MAX as f32 / 2.0) / u16::MAX as f32 * 2.0)
+                            .collect();
+                        let _ = tx.blocking_send(chunk);
+                    }
+                },
+                err_fn,
+                None,
+            )?,
             _ => anyhow::bail!("unsupported sample format"),
         };
 

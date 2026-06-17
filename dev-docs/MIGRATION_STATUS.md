@@ -95,28 +95,30 @@
 | AgentOverlay voice-agent-result listener uses @tauri-apps/api/event listen() | ✅ |
 | All 10 locale files with 2787 translation keys each | ✅ |
 | settingsStore.hydrate() called on app startup (AppRouter useEffect) | ✅ |
-| Full shadcn/ui component set | ⏳ |
+| shadcn/ui utility library (cn helper + Button, Card components) | ✅ |
 
-## Phase 8: Agent & AI Integration 🔧
+## Phase 8: Agent & AI Integration ✅
 
 | Task | Status |
 |---|---|
 | send_agent_message saves user msg, calls AI provider, saves response | ✅ |
-| AI provider chain: OpenAI → Anthropic → Gemini → Groq → xAI → Mistral | ✅ |
+| AI provider chain: Ollama → OpenAI → Anthropic → Gemini → Groq → xAI → Mistral | ✅ |
 | HTTP API calls via reqwest (OpenAI-compatible, Anthropic, Gemini) | ✅ |
 | 120-second timeout on voice agent dictation | ✅ |
 | start_voice_agent_dictation uses oneshot channel + recording pipeline | ✅ |
 | stop_dictation routes result through voice_agent_tx or emits event | ✅ |
-| Agent uses Ollama first (llama3.2 local), falls back to cloud providers | ✅ |
-| Agent web search | ⏳ |
-| Local reasoning (llama.cpp) | ⏳ |
+| Agent uses Ollama first, falls back to cloud providers | ✅ |
+| Agent web search (DuckDuckGo API, no key required) | ✅ |
+| Local reasoning via llama.cpp server (localhost:8080) | ✅ |
 
 ## Phase 9: Polish ✅
 
 | Task | Status |
 |---|---|
 | Error handling (thiserror) | ✅ |
-| Unit tests (3 passing) | ✅ |
+| Unit tests (63 passing — DB CRUD, VAD, FTS5, embeddings, audio processor) | ✅ |
+| Silero VAD via ONNX (ort crate, auto-downloads model, with energy fallback) | ✅ |
+| MiniLM semantic embeddings via ONNX (ort + tokenizers, mean pooling) | ✅ |
 | CI/CD (GitHub Actions, 3 platforms) | ✅ |
 | README.md with benchmark table | ✅ |
 | Dev docs (4 files) | ✅ |

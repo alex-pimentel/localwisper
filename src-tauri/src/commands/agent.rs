@@ -456,8 +456,96 @@ pub async fn start_voice_agent_dictation(
 
 // Agent web search tool
 #[tauri::command]
-pub fn agent_web_search(_query: String, _num_results: Option<u32>) -> Result<String, String> {
-    Err("agent web search not yet implemented in Rust backend".to_string())
+pub async fn agent_web_search(query: String, num_results: Option<u32>) -> Result<String, String> {
+    let count = num_results.unwrap_or(5).min(10);
+    let client = Client::new();
+
+    // Try DuckDuckGo Lite API first (no API key needed)
+    let url = format!(
+        "https://lite.duckduckgo.com/lite/?q={}",
+        urlencoding(&query)
+    );
+
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            let html = resp.text().await.unwrap_or_default();
+            let mut results = Vec::new();
+            let mut in_result = false;
+            let mut current = String::new();
+
+            for line in html.lines() {
+                if line.contains("class=\"result-link\"") {
+                    in_result = true;
+                    current.clear();
+                }
+                if in_result {
+                    current.push_str(line);
+                    if line.contains("</a>") {
+                        // Extract text between > and <
+                        if let Some(start) = current.find('>') {
+                            if let Some(end) = current[start..].find("</a>") {
+                                let text = &current[start + 1..start + end];
+                                let clean = text
+                                    .replace("<b>", "")
+                                    .replace("</b>", "")
+                                    .trim()
+                                    .to_string();
+                                if !clean.is_empty() && results.len() < count as usize {
+                                    results.push(clean);
+                                }
+                            }
+                        }
+                        in_result = false;
+                    }
+                }
+            }
+
+            if results.is_empty() {
+                // Fallback: try DuckDuckGo HTML scraping
+                let fallback_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(&query));
+                match client.get(&fallback_url).header("User-Agent", "Mozilla/5.0").send().await {
+                    Ok(fb_resp) => {
+                        let fb_html = fb_resp.text().await.unwrap_or_default();
+                        for line in fb_html.lines() {
+                            if line.contains("class=\"result__a\"") && results.len() < count as usize {
+                                if let Some(start) = line.find('>') {
+                                    let after = &line[start + 1..];
+                                    if let Some(end) = after.find("</a>") {
+                                        let text = after[..end]
+                                            .replace("<b>", "")
+                                            .replace("</b>", "")
+                                            .trim()
+                                            .to_string();
+                                        if !text.is_empty() {
+                                            results.push(text);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {}
+                }
+            }
+
+            if results.is_empty() {
+                Err("no search results found".to_string())
+            } else {
+                Ok(results.join("\n"))
+            }
+        }
+        Err(e) => Err(format!("web search failed: {}", e)),
+    }
+}
+
+fn urlencoding(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+            ' ' => "+".to_string(),
+            _ => format!("%{:02X}", c as u8),
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -566,18 +654,56 @@ pub fn save_agent_key(_key: String) -> Result<(), String> {
     Ok(())
 }
 
-// Local reasoning
+// Local reasoning via llama.cpp server
 #[tauri::command]
-pub fn process_local_reasoning(
-    _text: String,
+pub async fn process_local_reasoning(
+    text: String,
     _model_id: String,
     _agent_name: Option<String>,
     _config: Option<String>,
 ) -> Result<String, String> {
-    Err("local reasoning not yet implemented".to_string())
+    let client = Client::new();
+    let body = json!({
+        "prompt": text,
+        "n_predict": 512,
+        "temperature": 0.7,
+        "stop": ["</s>", "User:", "user:"],
+        "cache_prompt": true,
+    });
+
+    let resp = client
+        .post("http://localhost:8080/completion")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("llama.cpp connection error: {} — is the local server running?", e))?;
+
+    let status = resp.status();
+    let response_text = resp.text().await.map_err(|e| format!("read error: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("llama.cpp API error ({}): {}", status, response_text));
+    }
+
+    let v: Value = serde_json::from_str(&response_text)
+        .map_err(|e| format!("parse error: {}", e))?;
+
+    v["content"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "no content in llama.cpp response".to_string())
 }
 
 #[tauri::command]
-pub fn check_local_reasoning_available() -> Result<bool, String> {
-    Ok(false)
+pub async fn check_local_reasoning_available() -> Result<bool, String> {
+    let client = Client::new();
+    match client
+        .get("http://localhost:8080/health")
+        .send()
+        .await
+    {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(_) => Ok(false),
+    }
 }

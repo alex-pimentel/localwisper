@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useTranslation } from 'react-i18next'
 import { useHotkey } from './hooks/useHotkey'
 import { useAudioRecording } from './hooks/useAudioRecording'
@@ -15,16 +16,6 @@ function MicIcon({ size = 16 }) {
       <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
       <line x1="12" x2="12" y1="19" y2="22" />
     </svg>
-  )
-}
-
-function SoundWaveIcon({ size = 16 }) {
-  return (
-    <div className="flex items-center justify-center gap-[3px]">
-      <div className="bg-white rounded-full" style={{ width: size * 0.25, height: size * 0.6 }} />
-      <div className="bg-white rounded-full" style={{ width: size * 0.25, height: size }} />
-      <div className="bg-white rounded-full" style={{ width: size * 0.25, height: size * 0.6 }} />
-    </div>
   )
 }
 
@@ -75,7 +66,6 @@ export default function App() {
   const menuRef = useRef(null)
 
   const floatingIconAutoHide = useSettingsStore((s) => s.floatingIconAutoHide)
-  const panelStartPosition = useSettingsStore((s) => s.panelStartPosition) || 'bottom-right'
 
   useEffect(() => {
     useTranscriptionStore.getState().init()
@@ -117,22 +107,79 @@ export default function App() {
     return () => clearTimeout(timeout)
   }, [isRecording, floatingIconAutoHide, transcriptionHistory.length])
 
+  useEffect(() => {
+    // Posiciona a janela no centro à direita ao iniciar
+    const positionWindow = async () => {
+      try {
+        const win = getCurrentWindow();
+        const monitor = await win.currentMonitor();
+        if (monitor) {
+          const sf = monitor.scaleFactor;
+          const width = monitor.size.width / sf;
+          const height = monitor.size.height / sf;
+          // Subtrai 160 (tamanho da janela) + 20 de margem
+          const x = Math.floor(width - 180);
+          const y = Math.floor(height / 2 - 80);
+          window.moveTo(x, y);
+        }
+      } catch (err) {
+        console.error("Failed to position window:", err);
+      }
+    };
+    positionWindow();
+  }, []);
+
   const micState = isRecording ? 'recording' : isHovered ? 'hover' : 'idle'
 
   const getButtonClass = () => {
-    const base = 'rounded-full w-10 h-10 flex items-center justify-center relative overflow-hidden border-2 border-white/70 cursor-pointer'
+    const base = 'rounded-full w-10 h-10 flex items-center justify-center relative overflow-hidden border-2 border-white/70 cursor-pointer shadow-md'
     if (micState === 'recording') return `${base} bg-[#2563eb]`
-    return `${base} bg-black/50`
+    return `${base} bg-black/60`
+  }
+
+  const handlePointerDown = async (e) => {
+    if (e.button === 0) {
+      console.log("Pointer down on drag handle. Attempting to start window dragging...");
+      try {
+        // Tenta usar start_window_drag do backend primeiro, depois cai de volta para o nativo
+        await invoke('start_window_drag');
+        console.log("start_window_drag invoked successfully via command.");
+      } catch (err) {
+        console.error("Failed to invoke start_window_drag command, trying direct window startDragging:", err);
+        try {
+          await getCurrentWindow().startDragging();
+          console.log("startDragging called successfully on current window.");
+        } catch (innerErr) {
+          console.error("Failed direct startDragging:", innerErr);
+        }
+      }
+    }
   }
 
   return (
-    <div className="dictation-window">
-      <div className={`fixed bottom-1 z-50 ${
-        panelStartPosition === 'bottom-left' ? 'left-1' :
-        panelStartPosition === 'center' ? 'left-1/2 -translate-x-1/2' : 'right-1'
-      }`}>
+    <div className="dictation-window w-screen h-screen flex items-center justify-center bg-transparent pointer-events-none">
+      
+      {/* Group container with some padding to maintain hover state easily */}
+      <div className="pointer-events-auto flex items-center gap-1 p-2 rounded-full group hover:bg-black/10 transition-colors" data-tauri-drag-region>
+        
+        {/* Drag Handle */}
+        <div 
+          className="flex items-center justify-center w-5 h-8 opacity-0 group-hover:opacity-100 transition-opacity cursor-move text-gray-500 hover:text-gray-800"
+          onPointerDown={handlePointerDown}
+          data-tauri-drag-region
+          title="Drag window"
+        >
+          {/* SVG must be pointer-events-none so Tauri detects the drag on the div */}
+          <div className="pointer-events-none flex flex-col gap-1" data-tauri-drag-region>
+            <div className="w-1 h-1 bg-current rounded-full" data-tauri-drag-region></div>
+            <div className="w-1 h-1 bg-current rounded-full" data-tauri-drag-region></div>
+            <div className="w-1 h-1 bg-current rounded-full" data-tauri-drag-region></div>
+          </div>
+        </div>
+
+        {/* Microphone Button Container */}
         <div
-          className="relative flex items-center gap-2"
+          className="relative flex items-center"
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => {
             setIsHovered(false)
@@ -141,7 +188,7 @@ export default function App() {
         >
           <Tooltip
             content={isRecording ? t('app.mic.recording') : hotkey}
-            align={panelStartPosition === 'bottom-left' ? 'left' : panelStartPosition === 'center' ? 'center' : 'right'}
+            align="center"
           >
             <button
               ref={buttonRef}
@@ -159,7 +206,7 @@ export default function App() {
               ) : null}
 
               {micState === 'recording' && (
-                <div className="absolute inset-0 rounded-full border-2 border-primary/50 animate-pulse" />
+                <div className="absolute inset-0 rounded-full border-2 border-primary/50 animate-pulse pointer-events-none" />
               )}
             </button>
           </Tooltip>
@@ -167,7 +214,7 @@ export default function App() {
           {isCommandMenuOpen && (
             <div
               ref={menuRef}
-              className="absolute bottom-full right-0 mb-3 w-48 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+              className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-40 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg z-50 pointer-events-auto"
             >
               <button
                 className="w-full px-3 py-2 text-left text-sm font-medium hover:bg-muted focus:bg-muted focus:outline-none"

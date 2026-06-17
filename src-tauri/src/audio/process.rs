@@ -1,5 +1,7 @@
 use anyhow::Result;
-use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 
 use super::vad::VoiceActivityDetector;
 
@@ -59,5 +61,37 @@ impl AudioProcessor {
 
     pub fn target_rate(&self) -> u32 {
         self.target_sample_rate
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_processor_creation() {
+        let proc = AudioProcessor::new(44100);
+        assert!(proc.is_ok());
+    }
+
+    #[test]
+    fn test_processor_rejects_silence() {
+        let mut proc = AudioProcessor::new(16000).unwrap();
+        let silence = vec![0.0_f32; 512];
+        assert!(proc.process(&silence).is_none());
+    }
+
+    #[test]
+    fn test_processor_reset_vad() {
+        let mut proc = AudioProcessor::new(16000).unwrap();
+        proc.reset_vad();
+        let silence = vec![0.0_f32; 512];
+        assert!(proc.process(&silence).is_none());
+    }
+
+    #[test]
+    fn test_target_rate_is_16000() {
+        let proc = AudioProcessor::new(44100).unwrap();
+        assert_eq!(proc.target_rate(), 16000);
     }
 }

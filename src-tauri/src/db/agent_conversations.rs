@@ -28,7 +28,11 @@ pub struct AgentMessage {
 }
 
 impl Database {
-    pub fn create_agent_conversation(&self, title: Option<&str>, note_id: Option<&str>) -> Result<AgentConversation> {
+    pub fn create_agent_conversation(
+        &self,
+        title: Option<&str>,
+        note_id: Option<&str>,
+    ) -> Result<AgentConversation> {
         let id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         self.with_conn(|conn| {
@@ -68,7 +72,8 @@ impl Database {
                     updated_at: row.get(7)?,
                 })
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
@@ -96,8 +101,12 @@ impl Database {
 
     pub fn delete_agent_conversation(&self, id: &str) -> Result<bool> {
         self.with_conn(|conn| {
-            conn.execute("DELETE FROM agent_messages WHERE conversation_id = ?1", params![id])?;
-            let affected = conn.execute("DELETE FROM agent_conversations WHERE id = ?1", params![id])?;
+            conn.execute(
+                "DELETE FROM agent_messages WHERE conversation_id = ?1",
+                params![id],
+            )?;
+            let affected =
+                conn.execute("DELETE FROM agent_conversations WHERE id = ?1", params![id])?;
             Ok(affected > 0)
         })
     }
@@ -113,7 +122,13 @@ impl Database {
         })
     }
 
-    pub fn add_agent_message(&self, conversation_id: &str, role: &str, content: &str, metadata: Option<&str>) -> Result<AgentMessage> {
+    pub fn add_agent_message(
+        &self,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        metadata: Option<&str>,
+    ) -> Result<AgentMessage> {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         self.with_conn(|conn| {
             conn.execute(
@@ -141,7 +156,7 @@ impl Database {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, conversation_id, role, content, metadata, created_at
-                 FROM agent_messages WHERE conversation_id = ?1 ORDER BY id ASC"
+                 FROM agent_messages WHERE conversation_id = ?1 ORDER BY id ASC",
             )?;
             let rows = stmt.query_map(params![conversation_id], |row| {
                 Ok(AgentMessage {
@@ -153,7 +168,8 @@ impl Database {
                     created_at: row.get(5)?,
                 })
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
@@ -177,7 +193,11 @@ impl Database {
         })
     }
 
-    pub fn get_conversations_for_note(&self, note_id: &str, limit: i64) -> Result<Vec<AgentConversation>> {
+    pub fn get_conversations_for_note(
+        &self,
+        note_id: &str,
+        limit: i64,
+    ) -> Result<Vec<AgentConversation>> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, title, note_id, is_archived, is_synced, cloud_id, created_at, updated_at
@@ -195,11 +215,16 @@ impl Database {
                     updated_at: row.get(7)?,
                 })
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
-    pub fn search_agent_conversations(&self, query: &str, limit: i64) -> Result<Vec<AgentConversation>> {
+    pub fn search_agent_conversations(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<AgentConversation>> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, title, note_id, is_archived, is_synced, cloud_id, created_at, updated_at
@@ -218,7 +243,8 @@ impl Database {
                     updated_at: row.get(7)?,
                 })
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
@@ -250,7 +276,8 @@ impl Database {
                     updated_at: row.get(7)?,
                 })
             })?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         })
     }
 
@@ -258,11 +285,17 @@ impl Database {
         Ok(Vec::new())
     }
 
-    pub fn get_conversation_by_client_id(&self, _client_id: &str) -> Result<Option<AgentConversation>> {
+    pub fn get_conversation_by_client_id(
+        &self,
+        _client_id: &str,
+    ) -> Result<Option<AgentConversation>> {
         Ok(None)
     }
 
-    pub fn upsert_conversation_from_cloud(&self, cloud_conv: &AgentConversation) -> Result<AgentConversation> {
+    pub fn upsert_conversation_from_cloud(
+        &self,
+        cloud_conv: &AgentConversation,
+    ) -> Result<AgentConversation> {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         self.with_conn(|conn| {
             conn.execute(
@@ -287,9 +320,130 @@ impl Database {
 
     pub fn hard_delete_conversation(&self, id: &str) -> Result<bool> {
         self.with_conn(|conn| {
-            conn.execute("DELETE FROM agent_messages WHERE conversation_id = ?1", params![id])?;
-            let affected = conn.execute("DELETE FROM agent_conversations WHERE id = ?1", params![id])?;
+            conn.execute(
+                "DELETE FROM agent_messages WHERE conversation_id = ?1",
+                params![id],
+            )?;
+            let affected =
+                conn.execute("DELETE FROM agent_conversations WHERE id = ?1", params![id])?;
             Ok(affected > 0)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_db() -> Database {
+        let dir = std::env::temp_dir().join(format!("lightwisper_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Database::open(&dir.join("test.db")).unwrap()
+    }
+
+    #[test]
+    fn test_create_and_get_conversation() {
+        let db = test_db();
+        let conv = db
+            .create_agent_conversation(Some("Test Chat"), None)
+            .unwrap();
+        assert_eq!(conv.title.unwrap(), "Test Chat");
+
+        let got = db.get_agent_conversation(&conv.id).unwrap().unwrap();
+        assert_eq!(got.id, conv.id);
+    }
+
+    #[test]
+    fn test_get_conversations_pagination() {
+        let db = test_db();
+        for i in 0..3 {
+            db.create_agent_conversation(Some(&format!("Chat {}", i)), None)
+                .unwrap();
+        }
+        let list = db.get_agent_conversations(2).unwrap();
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_delete_conversation_cascades_messages() {
+        let db = test_db();
+        let conv = db.create_agent_conversation(None, None).unwrap();
+        db.add_agent_message(&conv.id, "user", "hello", None)
+            .unwrap();
+        db.add_agent_message(&conv.id, "assistant", "hi there", None)
+            .unwrap();
+        assert!(db.delete_agent_conversation(&conv.id).unwrap());
+        assert!(db.get_agent_conversation(&conv.id).unwrap().is_none());
+        assert!(db.get_agent_messages(&conv.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_update_conversation_title() {
+        let db = test_db();
+        let conv = db
+            .create_agent_conversation(Some("Original"), None)
+            .unwrap();
+        db.update_agent_conversation_title(&conv.id, "Renamed")
+            .unwrap();
+        let updated = db.get_agent_conversation(&conv.id).unwrap().unwrap();
+        assert_eq!(updated.title.unwrap(), "Renamed");
+    }
+
+    #[test]
+    fn test_add_and_get_messages() {
+        let db = test_db();
+        let conv = db.create_agent_conversation(None, None).unwrap();
+        let msg = db
+            .add_agent_message(&conv.id, "user", "test message", None)
+            .unwrap();
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.content, "test message");
+
+        let msgs = db.get_agent_messages(&conv.id).unwrap();
+        assert_eq!(msgs.len(), 1);
+    }
+
+    #[test]
+    fn test_archive_and_unarchive() {
+        let db = test_db();
+        let conv = db.create_agent_conversation(None, None).unwrap();
+        assert!(db.archive_agent_conversation(&conv.id).unwrap());
+        let archived = db.get_agent_conversation(&conv.id).unwrap().unwrap();
+        assert!(archived.is_archived);
+
+        assert!(db.unarchive_agent_conversation(&conv.id).unwrap());
+        let unarchived = db.get_agent_conversation(&conv.id).unwrap().unwrap();
+        assert!(!unarchived.is_archived);
+    }
+
+    #[test]
+    fn test_conversations_for_note() {
+        let db = test_db();
+        let conv = db
+            .create_agent_conversation(Some("Note Chat"), Some("note-1"))
+            .unwrap();
+        let convs = db.get_conversations_for_note("note-1", 10).unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].id, conv.id);
+    }
+
+    #[test]
+    fn test_search_conversations() {
+        let db = test_db();
+        db.create_agent_conversation(Some("Shopping List"), None)
+            .unwrap();
+        db.create_agent_conversation(Some("Meeting Notes"), None)
+            .unwrap();
+        let results = db.search_agent_conversations("Shopping", 10).unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_get_pending_conversations() {
+        let db = test_db();
+        db.create_agent_conversation(None, None).unwrap();
+        let pending = db.get_pending_conversations().unwrap();
+        assert_eq!(pending.len(), 1);
     }
 }
